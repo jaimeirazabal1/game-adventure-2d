@@ -47,6 +47,8 @@ let playerHealth = MAX_HEALTH;
 let orcHealth = MAX_HEALTH;
 let playerHealthBar;
 let orcHealthBar;
+let playerHealthText; // Texto para mostrar la vida del jugador
+let orcHealthText;    // Texto para mostrar la vida del orco
 
 function preload() {
     // Cargar assets básicos
@@ -412,7 +414,27 @@ function create() {
     
     // Agregar colisión entre proyectiles y orco
     this.physics.add.collider(projectiles, orc, (projectile, orc) => {
-        takeDamage(orc, 10); // El orco recibe 10 de daño
+        // Daño aleatorio entre 5 y 15 puntos
+        const damage = Phaser.Math.Between(5, 15);
+        takeDamage(orc, damage);
+        
+        // Crear efecto de texto para mostrar el daño
+        const damageText = this.add.text(orc.x, orc.y - 20, `-${damage}`, {
+            font: '16px Arial',
+            fill: '#ff0000'
+        });
+        
+        // Animar el texto de daño
+        this.tweens.add({
+            targets: damageText,
+            y: damageText.y - 30,
+            alpha: 0,
+            duration: 800,
+            onComplete: function() {
+                damageText.destroy();
+            }
+        });
+        
         projectile.destroy();
     });
 
@@ -420,8 +442,33 @@ function create() {
     // Barra de vida del jugador
     playerHealthBar = this.add.graphics();
     
+    // Texto de vida del jugador
+    playerHealthText = this.add.text(player.x - 25, player.y - 55, `${playerHealth}/${MAX_HEALTH}`, {
+        font: '12px Arial',
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 2
+    });
+    
     // Barra de vida del orco
     orcHealthBar = this.add.graphics();
+    
+    // Texto de vida del orco
+    orcHealthText = this.add.text(orc.x - 25, orc.y - 55, `${orcHealth}/${MAX_HEALTH}`, {
+        font: '12px Arial',
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 2
+    });
+
+    // Agregamos un listener para cuando el orco sea destruido
+    this.events.on('destroy-orc', () => {
+        console.log('Orco destruido');
+        isOrcAlive = false;
+        if (orcHealthBar) {
+            orcHealthBar.clear();
+        }
+    });
 }
 
 function destroyProjectile(projectile, target) {
@@ -486,117 +533,124 @@ function fireProjectile() {
 }
 
 function updateOrc() {
-    // Si el orco no está vivo, no actualizamos su estado
-    if (!isOrcAlive) return;
-
-    const distanceToPlayer = Phaser.Math.Distance.Between(
-        orc.x, orc.y,
-        player.x, player.y
-    );
-
-    // Detectar si el jugador está en rango
-    if (distanceToPlayer < DETECTION_RADIUS) {
-        orc.isChasing = true;
-    } else if (distanceToPlayer > DETECTION_RADIUS * 1.5) {
-        orc.isChasing = false;
+    // Verificar explícitamente que el orco existe y está vivo
+    if (!isOrcAlive || !orc || !orc.body) {
+        return;
     }
 
-    let isMoving = false;
-    let newDirection = orc.currentDirection;
-    let velocityX = 0;
-    let velocityY = 0;
+    try {
+        const distanceToPlayer = Phaser.Math.Distance.Between(
+            orc.x, orc.y,
+            player.x, player.y
+        );
 
-    if (orc.isChasing) {
-        // Calcular las diferencias en X y Y con el jugador
-        const dx = player.x - orc.x;
-        const dy = player.y - orc.y;
-        
-        // Determinar la dirección principal basada en la mayor diferencia
-        if (Math.abs(dx) > Math.abs(dy)) {
-            // Movimiento horizontal
-            velocityX = dx > 0 ? ORC_SPEED : -ORC_SPEED;
-            velocityY = 0;
-            newDirection = dx > 0 ? 'right' : 'left';
-        } else {
-            // Movimiento vertical
-            velocityX = 0;
-            velocityY = dy > 0 ? ORC_SPEED : -ORC_SPEED;
-            newDirection = dy > 0 ? 'down' : 'up';
+        // Detectar si el jugador está en rango
+        if (distanceToPlayer < DETECTION_RADIUS) {
+            orc.isChasing = true;
+        } else if (distanceToPlayer > DETECTION_RADIUS * 1.5) {
+            orc.isChasing = false;
         }
-        
-        isMoving = true;
-    } else {
-        // Comportamiento de patrulla
-        orc.patrolTimer += 1;
-        
-        if (orc.patrolTimer > 180) {
-            orc.patrolTimer = 0;
-            // Elegir una dirección aleatoria (0: derecha, 1: izquierda, 2: arriba, 3: abajo)
-            const randomDirection = Phaser.Math.Between(0, 3);
-            switch (randomDirection) {
-                case 0:
-                    velocityX = ORC_SPEED * 0.5;
-                    velocityY = 0;
-                    newDirection = 'right';
-                    break;
-                case 1:
-                    velocityX = -ORC_SPEED * 0.5;
-                    velocityY = 0;
-                    newDirection = 'left';
-                    break;
-                case 2:
-                    velocityX = 0;
-                    velocityY = -ORC_SPEED * 0.5;
-                    newDirection = 'up';
-                    break;
-                case 3:
-                    velocityX = 0;
-                    velocityY = ORC_SPEED * 0.5;
-                    newDirection = 'down';
-                    break;
+
+        let isMoving = false;
+        let newDirection = orc.currentDirection;
+        let velocityX = 0;
+        let velocityY = 0;
+
+        if (orc.isChasing) {
+            // Calcular las diferencias en X y Y con el jugador
+            const dx = player.x - orc.x;
+            const dy = player.y - orc.y;
+            
+            // Determinar la dirección principal basada en la mayor diferencia
+            if (Math.abs(dx) > Math.abs(dy)) {
+                // Movimiento horizontal
+                velocityX = dx > 0 ? ORC_SPEED : -ORC_SPEED;
+                velocityY = 0;
+                newDirection = dx > 0 ? 'right' : 'left';
+            } else {
+                // Movimiento vertical
+                velocityX = 0;
+                velocityY = dy > 0 ? ORC_SPEED : -ORC_SPEED;
+                newDirection = dy > 0 ? 'down' : 'up';
             }
+            
             isMoving = true;
         } else {
-            // Continuar en la misma dirección
-            switch (orc.currentDirection) {
-                case 'right':
-                    velocityX = ORC_SPEED * 0.5;
-                    velocityY = 0;
-                    break;
-                case 'left':
-                    velocityX = -ORC_SPEED * 0.5;
-                    velocityY = 0;
-                    break;
-                case 'up':
-                    velocityX = 0;
-                    velocityY = -ORC_SPEED * 0.5;
-                    break;
-                case 'down':
-                    velocityX = 0;
-                    velocityY = ORC_SPEED * 0.5;
-                    break;
+            // Comportamiento de patrulla
+            orc.patrolTimer += 1;
+            
+            if (orc.patrolTimer > 180) {
+                orc.patrolTimer = 0;
+                // Elegir una dirección aleatoria (0: derecha, 1: izquierda, 2: arriba, 3: abajo)
+                const randomDirection = Phaser.Math.Between(0, 3);
+                switch (randomDirection) {
+                    case 0:
+                        velocityX = ORC_SPEED * 0.5;
+                        velocityY = 0;
+                        newDirection = 'right';
+                        break;
+                    case 1:
+                        velocityX = -ORC_SPEED * 0.5;
+                        velocityY = 0;
+                        newDirection = 'left';
+                        break;
+                    case 2:
+                        velocityX = 0;
+                        velocityY = -ORC_SPEED * 0.5;
+                        newDirection = 'up';
+                        break;
+                    case 3:
+                        velocityX = 0;
+                        velocityY = ORC_SPEED * 0.5;
+                        newDirection = 'down';
+                        break;
+                }
+                isMoving = true;
+            } else {
+                // Continuar en la misma dirección
+                switch (orc.currentDirection) {
+                    case 'right':
+                        velocityX = ORC_SPEED * 0.5;
+                        velocityY = 0;
+                        break;
+                    case 'left':
+                        velocityX = -ORC_SPEED * 0.5;
+                        velocityY = 0;
+                        break;
+                    case 'up':
+                        velocityX = 0;
+                        velocityY = -ORC_SPEED * 0.5;
+                        break;
+                    case 'down':
+                        velocityX = 0;
+                        velocityY = ORC_SPEED * 0.5;
+                        break;
+                }
+                isMoving = Math.abs(velocityX) > 0 || Math.abs(velocityY) > 0;
             }
-            isMoving = Math.abs(velocityX) > 0 || Math.abs(velocityY) > 0;
         }
-    }
 
-    // Aplicar velocidad
-    orc.setVelocity(velocityX, velocityY);
+        // Aplicar velocidad
+        orc.setVelocity(velocityX, velocityY);
 
-    // Actualizar la dirección actual
-    orc.currentDirection = newDirection;
+        // Actualizar la dirección actual
+        orc.currentDirection = newDirection;
 
-    // Reproducir la animación correspondiente
-    if (isMoving) {
-        const animationKey = `orc-${newDirection}`;
-        if (!orc.anims.isPlaying || orc.anims.currentAnim.key !== animationKey) {
-            orc.anims.play(animationKey, true);
+        // Reproducir la animación correspondiente
+        if (isMoving) {
+            const animationKey = `orc-${newDirection}`;
+            if (!orc.anims.isPlaying || orc.anims.currentAnim.key !== animationKey) {
+                orc.anims.play(animationKey, true);
+            }
+        } else {
+            const idleKey = `orc-idle-${newDirection}`;
+            if (!orc.anims.isPlaying || orc.anims.currentAnim.key !== idleKey) {
+                orc.anims.play(idleKey, true);
+            }
         }
-    } else {
-        const idleKey = `orc-idle-${newDirection}`;
-        if (!orc.anims.isPlaying || orc.anims.currentAnim.key !== idleKey) {
-            orc.anims.play(idleKey, true);
-        }
+    } catch (error) {
+        console.error('Error en updateOrc:', error);
+        isOrcAlive = false; // Marcar como muerto si hay un error
     }
 }
 
@@ -644,43 +698,67 @@ function update() {
     });
 
     // Actualizar el orco solo si está vivo
-    if (isOrcAlive) {
-        updateOrc();
+    if (isOrcAlive && orc && orc.body) {
+        try {
+            updateOrc();
+        } catch (error) {
+            console.error('Error al actualizar el orco:', error);
+            isOrcAlive = false;
+        }
     }
 
-    // Actualizar posición de las barras de vida
-    // Limpiar las barras de vida
+    // Actualizar posición de la barra de vida y texto del jugador
     playerHealthBar.clear();
-    orcHealthBar.clear();
-
-    // Dibujar fondo de las barras
     playerHealthBar.fillStyle(0x000000);
     playerHealthBar.fillRect(player.x - 25, player.y - 40, 50, 10);
-    
-    orcHealthBar.fillStyle(0x000000);
-    orcHealthBar.fillRect(orc.x - 25, orc.y - 40, 50, 10);
-
-    // Dibujar la vida actual
     playerHealthBar.fillStyle(0xff0000);
     playerHealthBar.fillRect(player.x - 25, player.y - 40, (playerHealth / MAX_HEALTH) * 50, 10);
-
-    orcHealthBar.fillStyle(0xff0000);
-    orcHealthBar.fillRect(orc.x - 25, orc.y - 40, (orcHealth / MAX_HEALTH) * 50, 10);
+    
+    // Centrar el texto sobre la barra
+    playerHealthText.setPosition(player.x - 25, player.y - 55);
+    playerHealthText.setText(`${playerHealth}/${MAX_HEALTH}`);
+    
+    // Solo actualizar la barra de vida del orco si existe
+    if (orc && orc.body) {
+        orcHealthBar.clear();
+        orcHealthBar.fillStyle(0x000000);
+        orcHealthBar.fillRect(orc.x - 25, orc.y - 40, 50, 10);
+        
+        // Mostrar la barra roja proporcional a la vida, incluso si está muerto
+        const healthWidth = Math.max(0, (orcHealth / MAX_HEALTH) * 50);
+        if (healthWidth > 0) {
+            orcHealthBar.fillStyle(0xff0000);
+            orcHealthBar.fillRect(orc.x - 25, orc.y - 40, healthWidth, 10);
+        }
+        
+        // Actualizar posición del texto de vida del orco
+        orcHealthText.setPosition(orc.x - 25, orc.y - 55);
+    }
 
     // Actualizar texto de debug con información de vida
-    debugText.setText([
+    const debugInfo = [
         `Player X: ${Math.floor(player.x)}`,
         `Player Y: ${Math.floor(player.y)}`,
         `Player Health: ${playerHealth}`,
-        `Orc Health: ${isOrcAlive ? orcHealth : 'DEAD'}`,
         `Camera X: ${Math.floor(camera.scrollX)}`,
         `Camera Y: ${Math.floor(camera.scrollY)}`,
         `Active Projectiles: ${projectiles.countActive()}`,
         `Last Shot: ${Math.floor((this.time.now - lastFireTime) / 1000)}s ago`,
-        `Last Direction: ${lastDirection}`,
-        `Orc State: ${isOrcAlive ? (orc.isChasing ? 'Chasing' : 'Patrolling') : 'DEAD'}`,
-        `Distance to Player: ${isOrcAlive ? Math.floor(Phaser.Math.Distance.Between(orc.x, orc.y, player.x, player.y)) : 'N/A'}`
-    ]);
+        `Last Direction: ${lastDirection}`
+    ];
+    
+    // Agregar información del orco solo si existe
+    if (orc && orc.body) {
+        debugInfo.push(
+            `Orc Health: ${orcHealth}`,
+            `Orc State: ${isOrcAlive ? (orc.isChasing ? 'Chasing' : 'Patrolling') : 'DEAD'}`,
+            `Distance to Player: ${Math.floor(Phaser.Math.Distance.Between(orc.x, orc.y, player.x, player.y))}`
+        );
+    } else {
+        debugInfo.push('Orc: MISSING');
+    }
+    
+    debugText.setText(debugInfo);
 }
 
 // Función para recibir daño
@@ -692,13 +770,44 @@ function takeDamage(entity, amount) {
             console.log('Game Over!');
             playerHealthBar.clear();
         }
-    } else if (entity === orc) {
+    } else if (entity === orc && isOrcAlive) {
+        // Guardar la vida anterior para animar la reducción
+        const previousHealth = orcHealth;
         orcHealth = Math.max(0, orcHealth - amount);
+        
+        // Animar la barra de vida
+        if (orcHealth < previousHealth) {
+            // Animar el texto de la vida
+            orcHealthText.setText(`${orcHealth}/${MAX_HEALTH}`);
+        }
+        
         if (orcHealth <= 0) {
-            // Orc muerto
+            // Orc muerto - pero no lo destruimos
             isOrcAlive = false;
-            orc.destroy();
-            orcHealthBar.clear();
+            console.log('Orco muerto');
+            
+            // Detener al orco
+            if (orc && orc.body) {
+                orc.setVelocity(0, 0);
+                
+                // Cambiar apariencia del orco "muerto"
+                orc.setTint(0x666666); // Tinte gris para indicar que está muerto
+                
+                // Reproducir una animación de "muerte" si existe
+                if (orc.anims.exists('orc-death')) {
+                    orc.anims.play('orc-death');
+                } else {
+                    // Si no hay animación de muerte, usar la idle
+                    orc.anims.play('orc-idle-down');
+                }
+                
+                // Desactivar las colisiones del orco
+                orc.body.checkCollision.none = true;
+                
+                // Actualizar el texto final
+                orcHealthText.setText(`0/${MAX_HEALTH}`);
+                orcHealthText.setColor('#ff0000');
+            }
         }
     }
 }
