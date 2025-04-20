@@ -32,6 +32,7 @@ let lastDirection = 'down'; // Nueva variable para guardar la última dirección
 const FIRE_DELAY = 500; // Delay entre disparos en milisegundos
 const PROJECTILE_SPEED = 200; // Velocidad del proyectil
 let orc; // Nueva variable para el orco
+let orcDeadSprite; // Nuevo sprite para el orco muerto
 let isOrcAlive = true; // Nueva variable para rastrear si el orco está vivo
 const DETECTION_RADIUS = 150; // Radio de detección del orco
 const ORC_SPEED = 80; // Velocidad del orco
@@ -50,6 +51,9 @@ let playerHealthBar;
 let orcHealthBar;
 let playerHealthText; // Texto para mostrar la vida del jugador
 let orcHealthText;    // Texto para mostrar la vida del orco
+
+// Variables globales para depuración
+let debugCounter = 0; // Contador para identificar ciclos de update
 
 function preload() {
     // Cargar assets básicos
@@ -79,6 +83,8 @@ function preload() {
 }
 
 function create() {
+    console.log('DEBUG: Inicializando juego - creando orco');
+
     // Configurar el tamaño del mundo
     this.physics.world.setBounds(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE);
 
@@ -416,15 +422,30 @@ function create() {
     this.physics.add.collider(orc, walls);
     this.physics.add.collider(player, orc);
     
-    // Agregar colisión entre proyectiles y orco
-    this.physics.add.collider(projectiles, orc, (projectile, orc) => {
+    // Agregar colisión entre proyectiles y orco - versión robusta con depuración
+    this.physics.add.collider(projectiles, orc, (projectile, targetOrco) => {
+        console.log(`DEBUG-COLISION (${debugCounter}): Proyectil colisiona con orco`);
+        console.log('DEBUG-COLISION: Estado del orco:', {
+            texture: targetOrco.texture ? targetOrco.texture.key : 'sin textura',
+            visible: targetOrco.visible,
+            active: targetOrco.active,
+            x: targetOrco.x,
+            y: targetOrco.y
+        });
+        
         // Daño aleatorio entre 5 y 15 puntos
         const damage = Phaser.Math.Between(5, 15);
-        console.log(`Proyectil golpeó al orco: daño=${damage}, vida actual=${orcHealth}/${ORC_MAX_HEALTH}`);
-        takeDamage(orc, damage);
+        console.log(`DEBUG-COLISION: Proyectil golpeó al orco: daño=${damage}, vida actual=${orcHealth}/${ORC_MAX_HEALTH}`);
+        
+        // Asegurarse de que el orco siga visible y activo
+        targetOrco.setVisible(true);
+        targetOrco.setActive(true);
+        
+        // Aplicar daño directamente
+        dañarOrco(damage);
         
         // Crear efecto de texto para mostrar el daño
-        const damageText = this.add.text(orc.x, orc.y - 20, `-${damage}`, {
+        const damageText = this.add.text(targetOrco.x, targetOrco.y - 20, `-${damage}`, {
             font: '16px Arial',
             fill: '#ff0000'
         });
@@ -440,7 +461,10 @@ function create() {
             }
         });
         
+        // Destruir solo el proyectil
         projectile.destroy();
+        
+        console.log(`DEBUG-COLISION (${debugCounter}): Fin del manejo de colisión`);
     });
 
     // Crear barras de vida
@@ -657,10 +681,47 @@ function updateOrc() {
 }
 
 function update() {
+    // Incrementar contador de depuración
+    debugCounter++;
+    
+    // Solo mostrar logs cada 60 frames para no saturar la consola
+    const shouldLog = (debugCounter % 60 === 0);
+    
+    if (shouldLog) {
+        console.log(`DEBUG-UPDATE (${debugCounter}): Inicio de update`);
+        
+        // Estado del orco
+        if (orc) {
+            console.log('DEBUG-UPDATE: Estado del orco:', {
+                vivo: isOrcAlive,
+                vida: orcHealth,
+                visible: orc.visible,
+                active: orc.active,
+                x: orc.x,
+                y: orc.y
+            });
+        } else {
+            console.log('DEBUG-UPDATE: El orco no existe');
+        }
+        
+        // Estado del sprite del orco muerto
+        if (orcDeadSprite) {
+            console.log('DEBUG-UPDATE: Estado del sprite muerto:', {
+                visible: orcDeadSprite.visible,
+                active: orcDeadSprite.active,
+                x: orcDeadSprite.x,
+                y: orcDeadSprite.y
+            });
+        } else if (!isOrcAlive) {
+            console.log('DEBUG-UPDATE: El orco está muerto pero no hay sprite muerto');
+        }
+    }
+
     const speed = 160;
     player.setVelocity(0);
     let isMoving = false;
 
+    // Movimiento del jugador
     if (cursors.left.isDown) {
         player.setVelocityX(-speed);
         player.anims.play('left', true);
@@ -699,14 +760,9 @@ function update() {
         }
     });
 
-    // Actualizar el orco solo si está vivo
+    // Actualizar el orco si está vivo
     if (isOrcAlive && orc && orc.body) {
-        try {
-            updateOrc();
-        } catch (error) {
-            console.error('Error al actualizar el orco:', error);
-            isOrcAlive = false;
-        }
+        updateOrc();
     }
 
     // Actualizar posición de la barra de vida y texto del jugador
@@ -719,29 +775,39 @@ function update() {
     // Centrar el texto sobre la barra
     playerHealthText.setPosition(player.x - 25, player.y - 55);
     playerHealthText.setText(`${playerHealth}/${MAX_HEALTH}`);
-    
-    // Solo actualizar la barra de vida del orco si existe
-    if (orc && orc.body) {
+
+    // Actualizar las barras de vida del orco según su estado
+    if (isOrcAlive && orc && orcHealthBar) {
+        // Orco vivo - actualizar barra de vida normal
         orcHealthBar.clear();
         orcHealthBar.fillStyle(0x000000);
         orcHealthBar.fillRect(orc.x - 25, orc.y - 40, 50, 10);
         
-        // Mostrar la barra roja proporcional a la vida, incluso si está muerto
         const healthWidth = Math.max(0, (orcHealth / ORC_MAX_HEALTH) * 50);
         if (healthWidth > 0) {
             orcHealthBar.fillStyle(0xff0000);
             orcHealthBar.fillRect(orc.x - 25, orc.y - 40, healthWidth, 10);
         }
         
-        // Actualizar posición del texto de vida del orco
-        orcHealthText.setPosition(orc.x - 25, orc.y - 55);
+        if (orcHealthText) {
+            orcHealthText.setPosition(orc.x - 25, orc.y - 55);
+        }
+    } else if (!isOrcAlive && orcDeadSprite && orcHealthBar) {
+        // Orco muerto - mantener la barra de vida vacía sobre el sprite estático
+        orcHealthBar.clear();
+        orcHealthBar.fillStyle(0x000000);
+        orcHealthBar.fillRect(orcDeadSprite.x - 25, orcDeadSprite.y - 40, 50, 10);
+        
+        if (orcHealthText) {
+            orcHealthText.setPosition(orcDeadSprite.x - 25, orcDeadSprite.y - 55);
+        }
     }
 
-    // Actualizar texto de debug con información de vida
+    // Actualizar texto de debug con información relevante
     const debugInfo = [
         `Player X: ${Math.floor(player.x)}`,
         `Player Y: ${Math.floor(player.y)}`,
-        `Player Health: ${playerHealth}`,
+        `Player Health: ${playerHealth}/${MAX_HEALTH}`,
         `Camera X: ${Math.floor(camera.scrollX)}`,
         `Camera Y: ${Math.floor(camera.scrollY)}`,
         `Active Projectiles: ${projectiles.countActive()}`,
@@ -749,25 +815,62 @@ function update() {
         `Last Direction: ${lastDirection}`
     ];
     
-    // Agregar información del orco solo si existe
-    if (orc && orc.body) {
+    // Agregar información del orco según su estado
+    if (isOrcAlive) {
         debugInfo.push(
-            `Orc Health: ${orcHealth}`,
-            `Orc State: ${isOrcAlive ? (orc.isChasing ? 'Chasing' : 'Patrolling') : 'DEAD'}`,
-            `Distance to Player: ${Math.floor(Phaser.Math.Distance.Between(orc.x, orc.y, player.x, player.y))}`
+            `Orc Health: ${orcHealth}/${ORC_MAX_HEALTH}`,
+            `Orc State: ${orc && orc.isChasing ? 'Chasing' : 'Patrolling'}`
         );
     } else {
-        debugInfo.push('Orc: MISSING');
+        debugInfo.push('Orc: DEAD');
     }
     
-    // debugText.setText(debugInfo);
+    debugText.setText(debugInfo);
+
+    if (shouldLog) {
+        console.log(`DEBUG-UPDATE (${debugCounter}): Fin de update`);
+    }
 }
 
 // Función para recibir daño
 function takeDamage(entity, amount) {
     console.log(`takeDamage llamado: entity=${entity === player ? 'player' : 'orc'}, amount=${amount}`);
-    console.log(entity,isOrcAlive)
-    if (entity === player) {
+    
+    // Depuración: mostrar la textura y propiedades del objeto
+    if (entity) {
+        console.log('Propiedades del objeto:', {
+            tipo: entity.type || 'desconocido',
+            textura: entity.texture ? entity.texture.key : 'sin textura',
+            frame: entity.frame ? entity.frame.name : 'sin frame'
+        });
+    }
+    
+    // Verificación mejorada para detectar el orco basada en la textura
+    const isPlayer = entity === player || 
+                   (entity && player && entity.x === player.x && entity.y === player.y);
+    
+    // Verificar si es el orco basándonos en su textura
+    const isOrc = (entity === orc) || 
+                (entity && entity.texture && entity.texture.key === 'orc');
+    
+    console.log(`Verificación: isPlayer=${isPlayer}, isOrc=${isOrc}`);
+    
+    // Si es un proyectil, ignorarlo
+    if (entity && entity.texture && entity.texture.key === 'projectile') {
+        console.log('Ignorando proyectil, no debería dañar al orco directamente');
+        return;
+    }
+    
+    // Si detectamos que es el orco pero no lo estamos reconociendo como tal, 
+    // forzamos la identificación
+    if (!isPlayer && entity && entity.type === 'Sprite' && 
+        entity.texture && entity.texture.key === 'orc') {
+        console.log('¡Detectado orco por textura!');
+        dañarOrco(amount);
+        return;
+    }
+    
+    if (isPlayer) {
         playerHealth = Math.max(0, playerHealth - amount);
         console.log(`Vida del jugador actualizada: ${playerHealth}/${MAX_HEALTH}`);
         if (playerHealth <= 0) {
@@ -775,48 +878,77 @@ function takeDamage(entity, amount) {
             console.log('Game Over!');
             playerHealthBar.clear();
         }
-    } else if (entity === orc && isOrcAlive) {
-        // Guardar la vida anterior para animar la reducción
-        const previousHealth = orcHealth;
-        orcHealth = Math.max(0, orcHealth - amount);
+    } else if (isOrc && isOrcAlive) {
+        dañarOrco(amount);
+    } else {
+        console.log('No se reconoció la entidad dañada:', entity);
+    }
+}
+
+// Función auxiliar para aplicar daño al orco
+function dañarOrco(amount) {
+    console.log(`DEBUG-DAÑAR (${debugCounter}): Inicio de dañarOrco con cantidad ${amount}`);
+    console.log('DEBUG-DAÑAR: Estado del orco antes de dañar:', {
+        vivo: isOrcAlive,
+        vida: orcHealth,
+        posición: orc ? `(${orc.x}, ${orc.y})` : 'no disponible',
+        visible: orc ? orc.visible : 'no disponible',
+        active: orc ? orc.active : 'no disponible'
+    });
+    
+    // Guardar la vida anterior para animar la reducción
+    const previousHealth = orcHealth;
+    orcHealth = Math.max(0, orcHealth - amount);
+    
+    console.log(`DEBUG-DAÑAR: Orco dañado: -${amount} HP, Vida anterior=${previousHealth}, Vida actual=${orcHealth}`);
+    
+    // Animar la barra de vida
+    if (orcHealth < previousHealth && orcHealthText) {
+        // Animar el texto de la vida
+        orcHealthText.setText(`${orcHealth}/${ORC_MAX_HEALTH}`);
+        console.log('DEBUG-DAÑAR: Texto de vida actualizado');
+    }
+    
+    if (orcHealth <= 0 && isOrcAlive) {
+        // Orc muerto
+        isOrcAlive = false;
+        console.log('DEBUG-DAÑAR: Orco muerto - creando sprite estático');
         
-        console.log(`Orco dañado: -${amount} HP, Vida anterior=${previousHealth}, Vida actual=${orcHealth}/${ORC_MAX_HEALTH}`);
-        
-        // Animar la barra de vida
-        if (orcHealth < previousHealth) {
-            // Animar el texto de la vida
-            orcHealthText.setText(`${orcHealth}/${ORC_MAX_HEALTH}`);
-        }
-        
-        if (orcHealth <= 0) {
-            // Orc muerto - pero no lo destruimos
-            isOrcAlive = false;
-            console.log('Orco muerto');
+        if (orc) {
+            console.log('DEBUG-DAÑAR: Creando sprite en posición', orc.x, orc.y);
             
-            // Detener al orco
-            if (orc && orc.body) {
-                orc.setVelocity(0, 0);
-                
-                // Cambiar apariencia del orco "muerto"
-                orc.setTint(0x666666); // Tinte gris para indicar que está muerto
-                
-                // Reproducir una animación de "muerte" si existe
-                if (orc.anims.exists('orc-death')) {
-                    orc.anims.play('orc-death');
-                } else {
-                    // Si no hay animación de muerte, usar la idle
-                    orc.anims.play('orc-idle-down');
-                }
-                
-                // Desactivar las colisiones del orco
-                orc.body.checkCollision.none = true;
-                
-                // Actualizar el texto final
+            // Crear el sprite estático antes de hacer cualquier cambio al orco original
+            try {
+                orcDeadSprite = createDeadOrcSprite(orc.scene, orc.x, orc.y);
+                console.log('DEBUG-DAÑAR: Sprite muerto creado correctamente');
+            } catch (error) {
+                console.error('ERROR al crear sprite muerto:', error);
+            }
+            
+            // Actualizar el texto final
+            if (orcHealthText) {
                 orcHealthText.setText(`0/${ORC_MAX_HEALTH}`);
                 orcHealthText.setColor('#ff0000');
+                console.log('DEBUG-DAÑAR: Texto de vida final actualizado (rojo)');
             }
+            
+            // Ahora podemos desactivar el orco original (lo hacemos invisible pero mantenemos sus propiedades)
+            try {
+                console.log('DEBUG-DAÑAR: Desactivando orco original');
+                orc.setVisible(false);
+                if (orc.body) {
+                    orc.body.checkCollision.none = true;
+                    console.log('DEBUG-DAÑAR: Colisiones del orco desactivadas');
+                }
+            } catch (error) {
+                console.error('ERROR al desactivar orco original:', error);
+            }
+        } else {
+            console.error('DEBUG-DAÑAR: No se pudo encontrar el orco para crear el sprite muerto');
         }
     }
+    
+    console.log(`DEBUG-DAÑAR (${debugCounter}): Fin de dañarOrco`);
 }
 
 // Inicializar la vida del orco
@@ -918,4 +1050,42 @@ function findValidPosition(walls) {
     }
     
     return { x, y };
+}
+
+// Función para crear el sprite del orco muerto con depuración
+function createDeadOrcSprite(scene, x, y) {
+    console.log(`DEBUG-SPRITE (${debugCounter}): Creando sprite muerto en (${x}, ${y})`);
+    
+    if (!scene) {
+        console.error('DEBUG-SPRITE: Error - no hay escena disponible');
+        return null;
+    }
+    
+    try {
+        // Crear un sprite estático para reemplazar al orco cuando muere
+        const deadSprite = scene.add.sprite(x, y, 'orc');
+        deadSprite.setScale(0.6); // Mismo tamaño que el orco original
+        deadSprite.setTint(0x666666); // Tinte gris para indicar que está muerto
+        
+        // Usar el mismo frame que el orco tenía
+        if (orc && orc.frame && orc.frame.name) {
+            deadSprite.setFrame(orc.frame.name);
+            console.log(`DEBUG-SPRITE: Frame aplicado: ${orc.frame.name}`);
+        } else {
+            console.log('DEBUG-SPRITE: No se pudo determinar el frame del orco');
+        }
+        
+        console.log(`DEBUG-SPRITE (${debugCounter}): Sprite muerto creado exitosamente:`, {
+            x: deadSprite.x,
+            y: deadSprite.y,
+            visible: deadSprite.visible,
+            active: deadSprite.active,
+            frame: deadSprite.frame ? deadSprite.frame.name : 'desconocido'
+        });
+        
+        return deadSprite;
+    } catch (error) {
+        console.error('ERROR al crear sprite muerto:', error);
+        return null;
+    }
 } 
