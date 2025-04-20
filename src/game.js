@@ -43,8 +43,9 @@ const MAP_HEIGHT = 50; // Hacemos el mapa más grande
 
 // Variables de vida
 const MAX_HEALTH = 100;
+const ORC_MAX_HEALTH = 200; // Definimos la vida máxima del orco como constante global
 let playerHealth = MAX_HEALTH;
-let orcHealth = MAX_HEALTH;
+let orcHealth = ORC_MAX_HEALTH; // Inicializamos la vida del orco con su máximo
 let playerHealthBar;
 let orcHealthBar;
 let playerHealthText; // Texto para mostrar la vida del jugador
@@ -314,7 +315,10 @@ function create() {
     orc.patrolPoint = new Phaser.Math.Vector2(orc.x, orc.y);
     orc.isChasing = false;
     orc.patrolTimer = 0;
-    orc.currentDirection = 'left'; // Mirando hacia el jugador inicialmente
+    orc.currentDirection = 'left';
+    
+    // Inicializar la vida del orco con más puntos
+    initializeOrc();
 
     // Crear animaciones para el orco
     console.log('Creando animaciones del orco...');
@@ -416,6 +420,7 @@ function create() {
     this.physics.add.collider(projectiles, orc, (projectile, orc) => {
         // Daño aleatorio entre 5 y 15 puntos
         const damage = Phaser.Math.Between(5, 15);
+        console.log(`Proyectil golpeó al orco: daño=${damage}, vida actual=${orcHealth}/${ORC_MAX_HEALTH}`);
         takeDamage(orc, damage);
         
         // Crear efecto de texto para mostrar el daño
@@ -454,7 +459,7 @@ function create() {
     orcHealthBar = this.add.graphics();
     
     // Texto de vida del orco
-    orcHealthText = this.add.text(orc.x - 25, orc.y - 55, `${orcHealth}/${MAX_HEALTH}`, {
+    orcHealthText = this.add.text(orc.x - 25, orc.y - 55, `${orcHealth}/${ORC_MAX_HEALTH}`, {
         font: '12px Arial',
         fill: '#ffffff',
         stroke: '#000000',
@@ -471,12 +476,9 @@ function create() {
     });
 }
 
-function destroyProjectile(projectile, target) {
-    if (target === orc) {
-        takeDamage(orc, 10); // El orco recibe 10 de daño
-    } else if (target === player) {
-        takeDamage(player, 10); // El jugador recibe 10 de daño
-    }
+// Esta función ahora solo maneja colisiones con paredes
+function destroyProjectile(projectile, wall) {
+    // Crear explosión u otro efecto visual si lo deseas
     projectile.destroy();
 }
 
@@ -725,7 +727,7 @@ function update() {
         orcHealthBar.fillRect(orc.x - 25, orc.y - 40, 50, 10);
         
         // Mostrar la barra roja proporcional a la vida, incluso si está muerto
-        const healthWidth = Math.max(0, (orcHealth / MAX_HEALTH) * 50);
+        const healthWidth = Math.max(0, (orcHealth / ORC_MAX_HEALTH) * 50);
         if (healthWidth > 0) {
             orcHealthBar.fillStyle(0xff0000);
             orcHealthBar.fillRect(orc.x - 25, orc.y - 40, healthWidth, 10);
@@ -758,13 +760,16 @@ function update() {
         debugInfo.push('Orc: MISSING');
     }
     
-    debugText.setText(debugInfo);
+    // debugText.setText(debugInfo);
 }
 
 // Función para recibir daño
 function takeDamage(entity, amount) {
+    console.log(`takeDamage llamado: entity=${entity === player ? 'player' : 'orc'}, amount=${amount}`);
+    console.log(entity,isOrcAlive)
     if (entity === player) {
         playerHealth = Math.max(0, playerHealth - amount);
+        console.log(`Vida del jugador actualizada: ${playerHealth}/${MAX_HEALTH}`);
         if (playerHealth <= 0) {
             // Game Over
             console.log('Game Over!');
@@ -775,10 +780,12 @@ function takeDamage(entity, amount) {
         const previousHealth = orcHealth;
         orcHealth = Math.max(0, orcHealth - amount);
         
+        console.log(`Orco dañado: -${amount} HP, Vida anterior=${previousHealth}, Vida actual=${orcHealth}/${ORC_MAX_HEALTH}`);
+        
         // Animar la barra de vida
         if (orcHealth < previousHealth) {
             // Animar el texto de la vida
-            orcHealthText.setText(`${orcHealth}/${MAX_HEALTH}`);
+            orcHealthText.setText(`${orcHealth}/${ORC_MAX_HEALTH}`);
         }
         
         if (orcHealth <= 0) {
@@ -805,10 +812,20 @@ function takeDamage(entity, amount) {
                 orc.body.checkCollision.none = true;
                 
                 // Actualizar el texto final
-                orcHealthText.setText(`0/${MAX_HEALTH}`);
+                orcHealthText.setText(`0/${ORC_MAX_HEALTH}`);
                 orcHealthText.setColor('#ff0000');
             }
         }
+    }
+}
+
+// Inicializar la vida del orco
+function initializeOrc() {
+    orcHealth = ORC_MAX_HEALTH;
+    
+    // Si ya existe el texto, actualizarlo
+    if (orcHealthText) {
+        orcHealthText.setText(`${orcHealth}/${ORC_MAX_HEALTH}`);
     }
 }
 
